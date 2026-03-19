@@ -1,0 +1,65 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+      target: base
+    container_name: countries_app
+    restart: unless-stopped
+    working_dir: /var/www
+    volumes:
+      - .:/var/www
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      APP_DEBUG: ${APP_DEBUG:-true}
+      APP_URL: ${APP_URL:-http://localhost:8080}
+      CACHE_STORE: file
+      AUTH0_DOMAIN: ${AUTH0_DOMAIN}
+      AUTH0_AUDIENCE: ${AUTH0_AUDIENCE}
+      AUTH0_CLIENT_ID: ${AUTH0_CLIENT_ID:-}
+      VITE_AUTH0_CLIENT_ID: ${VITE_AUTH0_CLIENT_ID}
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep php-fpm >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 180s
+    networks:
+      - app
+
+  frontend-init:
+    image: node:22-alpine
+    container_name: countries_frontend_init
+    working_dir: /var/www
+    volumes:
+      - .:/var/www
+    environment:
+      VITE_APP_URL: ${APP_URL:-http://localhost:8080}
+      VITE_AUTH0_DOMAIN: ${AUTH0_DOMAIN}
+      VITE_AUTH0_CLIENT_ID: ${VITE_AUTH0_CLIENT_ID}
+      VITE_AUTH0_AUDIENCE: ${AUTH0_AUDIENCE}
+    command: sh /var/www/docker/frontend-init.sh
+    restart: "no"
+    networks:
+      - app
+
+  nginx:
+    image: nginx:alpine
+    container_name: countries_nginx
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - .:/var/www
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      app:
+        condition: service_healthy
+      frontend-init:
+        condition: service_completed_successfully
+    networks:
+      - app
+
+networks:
+  app:
+    driver: bridge
